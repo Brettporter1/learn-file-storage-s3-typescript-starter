@@ -1,0 +1,85 @@
+import { getBearerToken, validateJWT } from "../auth";
+import { respondWithJSON } from "./json";
+import { getVideo, updateVideo } from "../db/videos";
+import type { ApiConfig } from "../config";
+import type { BunRequest } from "bun";
+import { BadRequestError, NotFoundError, UserForbiddenError } from "./errors";
+
+type Thumbnail = {
+  data: ArrayBuffer;
+  mediaType: string;
+};
+
+const videoThumbnails: Map<string, Thumbnail> = new Map();
+
+export async function handlerGetThumbnail(cfg: ApiConfig, req: BunRequest) {
+  const { videoId } = req.params as { videoId?: string };
+  if (!videoId) {
+    throw new BadRequestError("Invalid video ID");
+  }
+
+  const video = getVideo(cfg.db, videoId);
+  if (!video) {
+    throw new NotFoundError("Couldn't find video");
+  }
+
+  const thumbnail = videoThumbnails.get(videoId);
+  if (!thumbnail) {
+    throw new NotFoundError("Thumbnail not found");
+  }
+
+  return new Response(thumbnail.data, {
+    headers: {
+      "Content-Type": thumbnail.mediaType,
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
+export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
+  const { videoId } = req.params as { videoId?: string };
+  if (!videoId) {
+    throw new BadRequestError("Invalid video ID");
+  }
+
+  const token = getBearerToken(req.headers);
+  const userID = validateJWT(token, cfg.jwtSecret);
+
+  const { db, port} = cfg;
+
+  console.log("uploading thumbnail for video", videoId, "by user", userID);
+
+  const formData = await req.formData();
+
+  const thumbnailData = formData.get("thumbnail");
+
+  console.log("req formData: ", formData);
+
+  if (!thumbnailData instanceof File) {
+	  throw new BadRequestError("Not and instance of File");
+  }
+
+  const MAX_UPLOAD_SIZE = 10 << 20;
+
+  if (thumbnailData.size > MAX_UPLOAD_SIZE) {
+	  throw new BadRequestError("File is too large");
+  }
+
+  const mediaType = thumbnailData.type;
+
+  const data = thumbnailData.arrayBuffer();
+
+  const video = await getVideo(db, videoId);
+  console.log("video data: ", JSON.stringify(video, null, 2);
+
+  if (video.owner !== userID) {
+	  throw new UserForbiddenError("User not authorized");
+  }
+
+  videoThumbnails.set(videoId, {data, mediaType});
+  const url = `http://localhost:${port}/api/thumbnails/${videoId}`;
+  video.url = url;
+  const updated = await updateVideo(db, video)
+
+  return respondWithJSON(200, updated);
+}
