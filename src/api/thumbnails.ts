@@ -35,6 +35,8 @@ export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
 
   const formData = await req.formData();
 
+  const thumbnailData = formData.get("thumbnail");
+
   if (!(thumbnailData instanceof File)) {
     throw new BadRequestError('Not and instance of File');
   }

@@ -3,3 +3,5 @@
 assets/
 samples/
 node_modules/
+.DS_Store
+
